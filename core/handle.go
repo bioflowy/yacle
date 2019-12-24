@@ -42,7 +42,6 @@ func (h *Handler) Handle(job cwl.Parameters) error {
 	if err != nil {
 		return err
 	}
-
 	if err := tool.Run(); err != nil {
 		return err
 	}

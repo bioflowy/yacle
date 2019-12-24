@@ -2,6 +2,7 @@ package class
 
 import (
 	"fmt"
+	cwl "github.com/otiai10/cwl.go"
 	"io"
 	"io/ioutil"
 	"os"
@@ -10,16 +11,28 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-
-	cwl "github.com/otiai10/cwl.go"
 )
+
+// Tool ...
+type Tool interface {
+	SetParameter(cwl.Parameters)
+	GetOutputMetadata() (map[string]interface{}, error)
+	Run() error
+	Finalize() error
+}
 
 // CommandLineTool represents class described as "CommandLineTool".
 type CommandLineTool struct {
-	Outdir     string // Given by context
-	Root       *cwl.Root
-	Parameters cwl.Parameters
-	Command    *exec.Cmd
+	Outdir         string // Given by context
+	Root           *cwl.Root
+	Parameters     cwl.Parameters
+	Command        *exec.Cmd
+	outputMetadata map[string]interface{}
+}
+
+// SetParameter ...
+func (tool *CommandLineTool) SetParameter(params cwl.Parameters) {
+	tool.Parameters = params
 }
 
 // Run ...
@@ -75,6 +88,9 @@ func (tool *CommandLineTool) Run() error {
 	}
 
 	return nil
+}
+func (tool *CommandLineTool) GetOutputMetadata() (map[string]interface{}, error) {
+	return tool.outputMetadata, nil
 }
 
 // ensureArguments ...
@@ -397,8 +413,66 @@ func (tool *CommandLineTool) arrangeOutputDirContents() error {
 	if err := tool.Root.Outputs.Dump(vm, tool.Command.Dir, tool.Root.Stdout, tool.Root.Stderr, os.Stdout); err != nil {
 		return err
 	}
-
+	if metadata, err := tool.Root.Outputs.GetMetadata(vm, tool.Command.Dir, tool.Root.Stdout, tool.Root.Stderr); err != nil {
+		return err
+	} else {
+		tool.outputMetadata = metadata
+	}
+	if err := tool.copyOutputDirContents(tool.Command.Dir, tool.Root.Stdout, tool.Root.Stderr); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (tool *CommandLineTool) copyOutputDirContents(dir, stdout, stderr string) error {
+	for _, out := range tool.Root.Outputs {
+		switch out.Types[0].Type {
+		case "stdout":
+			name := out.ID
+			if stdout != "" && name != stdout {
+				name = stdout
+			}
+			linkOrCopy(filepath.Join(dir, name), filepath.Join(tool.Outdir, name))
+		case "File":
+			for _, glob := range out.Binding.Glob {
+				err := linkOrCopy(filepath.Join(dir, glob), filepath.Join(tool.Outdir, glob))
+				if err != nil {
+					return err
+				}
+			}
+
+		}
+	}
+	return nil
+}
+func linkOrCopy(src string, dist string) error {
+	err := os.Link(src, dist)
+	if err != nil {
+		return copyFileContents(src, dist)
+	}
+	return nil
+}
+func copyFileContents(src, dst string) (err error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return
+	}
+	defer func() {
+		cerr := out.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+	if _, err = io.Copy(out, in); err != nil {
+		return
+	}
+	err = out.Sync()
+	return
 }
 
 // Finalize closes all file desccriptors if needed.
