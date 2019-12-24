@@ -1,0 +1,4 @@
+grep_pattern: "one"
+target_file:
+  class: "File"
+  path: "test.txt"
