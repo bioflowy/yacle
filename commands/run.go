@@ -35,14 +35,13 @@ var Run = cli.Command{
 		}
 
 		paramfile, err := os.Open(ctx.Args().Get(1))
-		if err != nil {
-			return fmt.Errorf("failed to open parameter file: %v", err)
-		}
-		defer paramfile.Close()
-
 		params := cwl.NewParameters()
-		if err = params.Decode(paramfile); err != nil {
-			return fmt.Errorf("failed to decode parameter file: %v", err)
+		if err == nil {
+			defer paramfile.Close()
+
+			if err = params.Decode(paramfile); err != nil {
+				return fmt.Errorf("failed to decode parameter file: %v", err)
+			}
 		}
 
 		handler, err := core.NewHandler(root)
